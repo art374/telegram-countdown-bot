@@ -1,5 +1,6 @@
 import os
 import threading
+from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -50,16 +51,16 @@ def date_to_timestamp(date_text, time_text):
         time_text.split(":")
     )
 
-    dt = datetime(
+    iran_time = datetime(
         year,
         month,
         day,
         hour,
         minute,
-        tzinfo=timezone.utc
+        tzinfo=ZoneInfo("Asia/Tehran")
     )
 
-    return dt.timestamp()
+    return iran_time.timestamp()
 
     y, m, d = map(
         int,
