@@ -39,7 +39,27 @@ def run_web_server():
     server.serve_forever()
 
 
-def jalali_to_timestamp(date_text, time_text):
+def date_to_timestamp(date_text, time_text):
+    year, month, day = map(
+        int,
+        date_text.split("/")
+    )
+
+    hour, minute = map(
+        int,
+        time_text.split(":")
+    )
+
+    dt = datetime(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        tzinfo=timezone.utc
+    )
+
+    return dt.timestamp()
 
     y, m, d = map(
         int,
@@ -108,10 +128,7 @@ async def countdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
         time = context.args[1]
         title = " ".join(context.args[2:])
 
-        end = jalali_to_timestamp(
-            date,
-            time
-        )
+        end = date_to_timestamp(date, time)
 
         msg = await update.message.reply_text(
             "🎯 " + title
