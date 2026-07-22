@@ -1,5 +1,7 @@
 import os
+import threading
 from datetime import datetime, timezone
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import jdatetime
 from dotenv import load_dotenv
@@ -18,52 +20,79 @@ TOKEN = os.getenv("BOT_TOKEN")
 countdowns = {}
 
 
-def jalali_to_timestamp(date_text, time_text):
-    year, month, day = map(int, date_text.split("/"))
-    hour, minute = map(int, time_text.split(":"))
+# وب سرور کوچک برای Render
+class HealthCheck(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
 
-    jalali = jdatetime.datetime(
-        year,
-        month,
-        day,
-        hour,
-        minute
+    def log_message(self, format, *args):
+        return
+
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(
+        ("0.0.0.0", port),
+        HealthCheck
+    )
+    server.serve_forever()
+
+
+def jalali_to_timestamp(date_text, time_text):
+
+    y, m, d = map(
+        int,
+        date_text.split("/")
     )
 
-    gregorian = jalali.togregorian()
+    hour, minute = map(
+        int,
+        time_text.split(":")
+    )
 
-    return gregorian.replace(
+    j_date = jdatetime.datetime(
+        y, m, d,
+        hour, minute
+    )
+
+    g_date = j_date.togregorian()
+
+    return g_date.replace(
         tzinfo=timezone.utc
     ).timestamp()
 
 
 def remaining_text(seconds):
+
     if seconds <= 0:
-        return "✅ رویداد به پایان رسید"
+        return "✅ رویداد تمام شد"
 
     days = int(seconds // 86400)
     hours = int((seconds % 86400) // 3600)
     minutes = int((seconds % 3600) // 60)
 
-    result = "⏳ زمان باقی‌مانده:\n"
+    text = "⏳ زمان باقی‌مانده:\n"
 
     if days:
-        result += f"📅 {days} روز\n"
+        text += f"📅 {days} روز\n"
 
     if hours:
-        result += f"🕐 {hours} ساعت\n"
+        text += f"🕐 {hours} ساعت\n"
 
-    result += f"⏱ {minutes} دقیقه"
+    text += f"⏱ {minutes} دقیقه"
 
-    return result
+    return text
 
 
 async def is_admin(update):
+
     admins = await update.effective_chat.get_administrators()
 
     return any(
-        admin.user.id == update.effective_user.id
-        for admin in admins
+        a.user.id == update.effective_user.id
+        for a in admins
     )
 
 
@@ -71,7 +100,7 @@ async def countdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not await is_admin(update):
         await update.message.reply_text(
-            "❌ فقط ادمین‌ها اجازه ساخت تایمر دارند."
+            "❌ فقط ادمین‌ها اجازه دارند."
         )
         return
 
@@ -80,21 +109,20 @@ async def countdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
         time = context.args[1]
         title = " ".join(context.args[2:])
 
-        end_time = jalali_to_timestamp(
+        end = jalali_to_timestamp(
             date,
             time
         )
 
-        message = await update.message.reply_text(
-            f"🎯 {title}\n\n"
-            f"⏳ در حال ساخت تایمر..."
+        msg = await update.message.reply_text(
+            "🎯 " + title
         )
 
-        countdowns[message.message_id] = {
-            "chat_id": update.effective_chat.id,
-            "message_id": message.message_id,
+        countdowns[msg.message_id] = {
+            "chat": update.effective_chat.id,
+            "message": msg.message_id,
             "title": title,
-            "end": end_time
+            "end": end
         }
 
         await update.message.delete()
@@ -102,49 +130,42 @@ async def countdown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
 
         await update.message.reply_text(
-            "فرمت صحیح:\n\n"
+            "فرمت:\n"
             "/countdown 1405/05/01 20:00 نام رویداد"
         )
 
 
-async def update_timers(context: ContextTypes.DEFAULT_TYPE):
+async def update_timers(context):
 
     now = datetime.now(
         timezone.utc
     ).timestamp()
 
-    for timer in list(countdowns.values()):
+    for timer in countdowns.values():
 
-        seconds = timer["end"] - now
-
-        text = (
-            f"🎯 {timer['title']}\n\n"
-            f"{remaining_text(seconds)}"
-        )
+        left = timer["end"] - now
 
         try:
             await context.bot.edit_message_text(
-                chat_id=timer["chat_id"],
-                message_id=timer["message_id"],
-                text=text
+                chat_id=timer["chat"],
+                message_id=timer["message"],
+                text=(
+                    f"🎯 {timer['title']}\n\n"
+                    f"{remaining_text(left)}"
+                )
             )
 
         except Exception:
             pass
 
 
-async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if await is_admin(update):
-
-        countdowns.clear()
-
-        await update.message.reply_text(
-            "🛑 همه تایمرها حذف شدند."
-        )
-
-
 def main():
+
+    threading.Thread(
+        target=run_web_server,
+        daemon=True
+    ).start()
+
 
     app = (
         Application
@@ -158,14 +179,6 @@ def main():
         CommandHandler(
             "countdown",
             countdown
-        )
-    )
-
-
-    app.add_handler(
-        CommandHandler(
-            "stopcountdown",
-            stop
         )
     )
 
