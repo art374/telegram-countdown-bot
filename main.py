@@ -3,7 +3,6 @@ import threading
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-import jdatetime
 from dotenv import load_dotenv
 
 from telegram import Update
